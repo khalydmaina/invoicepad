@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>invoicepad</title>
+<meta name="description" content="Free invoice maker with no sign-up. Get paid by bank transfer or in USDC and USDT, with a checked wallet address and a QR code. Saves as PDF.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b6e4f'/%3E%3Cpath d='M10 8h12v16l-3-2-3 2-3-2-3 2z' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f1f0ea;
+    --panel: #ffffff;
+    --ink: #1b1b18;
+    --muted: #6b6a63;
+    --line: #dedcd3;
+    --field: #faf9f5;
+    --accent: #0b6e4f;
+    --accent-ink: #ffffff;
+    --error: #b3261e;
+    --warn: #8a5a00;
+    --ok: #0b6e4f;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121311;
+      --panel: #1b1d1a;
+      --ink: #ecebe4;
+      --muted: #9a998f;
+      --line: #30332d;
+      --field: #141513;
+      --accent: #5fd3a6;
+      --accent-ink: #0b1f17;
+      --error: #ff8a80;
+      --warn: #ffd978;
+      --ok: #5fd3a6;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+
+  /* top bar */
+  .bar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+    padding: 10px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { font: 700 1.15rem var(--mono); letter-spacing: -0.02em; margin-right: auto; }
+  .brand span { color: var(--accent); }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn {
+    padding: 7px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.88rem;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.small { padding: 4px 9px; font-size: 0.8rem; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #save-status { width: 100%; margin: 0; color: var(--error); font-size: 0.85rem; }
+  #save-status:empty { display: none; }
+
+  .tabs { display: none; }
+
+  /* layout */
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  }
+  .editor { padding: 16px; display: grid; gap: 14px; }
+  fieldset {
+    margin: 0; padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    display: grid; gap: 10px;
+    min-width: 0;
+  }
+  legend { padding: 0 6px; font-weight: 700; font-size: 0.85rem; }
+  label { display: grid; gap: 3px; font-size: 0.8rem; color: var(--muted); min-width: 0; }
+  input, select, textarea {
+    width: 100%; min-width: 0;
+    padding: 7px 9px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--field);
+    font-size: 0.95rem;
+  }
+  textarea { resize: vertical; min-height: 4.4em; }
+  input[aria-invalid="true"] { border-color: var(--error); }
+  input[type="color"] { padding: 2px; height: 34px; }
+  input[type="checkbox"] { width: auto; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 0.92rem; }
+  .hint { margin: 0; color: var(--muted); font-size: 0.8rem; }
+  .status { margin: 0; font-size: 0.83rem; }
+  .status.ok { color: var(--ok); }
+  .status.warn { color: var(--warn); }
+  .status.error { color: var(--error); }
+  .item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 62px 86px 30px;
+    gap: 6px;
+    align-items: end;
+  }
+  .item .remove {
+    height: 34px; padding: 0;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: transparent; cursor: pointer; color: var(--muted);
+  }
+  .item .remove:hover { color: var(--error); border-color: var(--error); }
+  .item-head { font-size: 0.75rem; color: var(--muted); }
+  .logo-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  [hidden] { display: none !important; }
+
+  /* the invoice: always paper, whatever the theme */
+  .stage { padding: 16px 16px 48px; min-width: 0; }
+  #problems { max-width: 794px; margin: 0 auto 10px; padding: 0; list-style: none; display: grid; gap: 6px; }
+  #problems li {
+    padding: 8px 12px; border-radius: 8px;
+    border: 1px solid var(--error); color: var(--error);
+    background: var(--panel); font-size: 0.88rem;
+  }
+  .sheet {
+    --paper-accent: #0b6e4f;
+    max-width: 794px; min-height: 1000px;
+    margin: 0 auto;
+    padding: clamp(20px, 6vw, 56px);
+    background: #fff; color: #1a1a1a;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 12px 32px rgba(0, 0, 0, 0.08);
+    font-size: 14px; line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  .sheet .ghost { color: #b9b8b0; }
+  .sheet .top { display: flex; justify-content: space-between; gap: 24px; }
+  .sheet .logo { display: block; max-width: 180px; max-height: 72px; margin-bottom: 10px; }
+  .sheet .name { font-weight: 700; font-size: 1.1em; }
+  .sheet .details { white-space: pre-line; color: #555; }
+  .sheet .meta { text-align: right; flex: none; }
+  .sheet .title {
+    font-size: 2em; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1;
+    color: var(--paper-accent); text-transform: uppercase;
+  }
+  .sheet .meta table { margin: 10px 0 0 auto; border-collapse: collapse; }
+  .sheet .meta th { text-align: right; font-weight: 400; color: #777; padding: 1px 12px 1px 0; }
+  .sheet .meta td { text-align: right; font-weight: 600; padding: 1px 0; }
+  .sheet .label {
+    font-size: 0.78em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #777; margin-bottom: 4px;
+  }
+  .sheet .to { margin-top: 28px; }
+  .sheet .items { width: 100%; margin-top: 28px; border-collapse: collapse; }
+  .sheet .items th {
+    text-align: left; padding: 8px 8px;
+    font-size: 0.78em; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #fff; background: var(--paper-accent);
+    overflow-wrap: normal; white-space: nowrap;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .sheet .items td { padding: 9px 8px; border-bottom: 1px solid #e6e6e0; vertical-align: top; }
+  .sheet .items .num { text-align: right; white-space: nowrap; }
+  .sheet .items td:first-child { white-space: pre-line; }
+  .sheet .items tr { break-inside: avoid; }
+  .sheet .totals { margin: 14px 0 0 auto; width: min(100%, 300px); border-collapse: collapse; break-inside: avoid; }
+  .sheet .totals td { padding: 4px 8px; }
+  .sheet .totals td:last-child { text-align: right; white-space: nowrap; }
+  .sheet .totals .grand td {
+    padding-top: 9px; padding-bottom: 9px;
+    font-size: 1.15em; font-weight: 800;
+    border-top: 2px solid var(--paper-accent);
+    color: var(--paper-accent);
+  }
+  .sheet .pay { margin-top: 32px; break-inside: avoid; }
+  .sheet .pay-grid { display: grid; gap: 14px; }
+  .sheet .method { border: 1px solid #dcdcd4; border-radius: 8px; padding: 12px 14px; break-inside: avoid; }
+  .sheet .method h3 { margin: 0 0 4px; font-size: 1em; }
+  .sheet .bank { white-space: pre-line; }
+  .sheet .crypto { display: flex; gap: 16px; align-items: flex-start; }
+  .sheet .crypto svg { width: 116px; height: 116px; flex: none; }
+  .sheet .addr { font-family: var(--mono); font-size: 0.95em; font-weight: 600; word-break: break-all; }
+  .sheet .only { margin-top: 6px; font-size: 0.9em; color: #8a3b00; }
+  .sheet .notes { margin-top: 28px; white-space: pre-line; break-inside: avoid; }
+
+  .about { margin: 0; padding: 0 2px 12px; color: var(--muted); font-size: 0.82rem; }
+  .about a { color: var(--accent); }
+
+  /* wide screens: the form and the invoice scroll separately, so the
+     invoice stays in view while you type */
+  @media screen and (min-width: 901px) {
+    body { height: 100dvh; display: flex; flex-direction: column; }
+    .layout { flex: 1; min-height: 0; }
+    .editor, .stage { height: 100%; overflow-y: auto; }
+    .editor { align-content: start; }
+  }
+
+  @media (max-width: 900px) {
+    .layout { display: block; }
+    .tabs {
+      display: grid; grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid var(--line); background: var(--panel);
+    }
+    .tabs button {
+      padding: 10px; border: 0; background: transparent; cursor: pointer;
+      font-weight: 700; color: var(--muted); border-bottom: 2px solid transparent;
+    }
+    .tabs button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+    body[data-view="edit"] .stage { display: none; }
+    body[data-view="preview"] .editor { display: none; }
+    .sheet { min-height: 0; }
+    .sheet .top { flex-direction: column; }
+    .sheet .meta { text-align: left; }
+    .sheet .meta table { margin-left: 0; }
+    .sheet .meta th, .sheet .meta td { text-align: left; }
+    .sheet .crypto { flex-direction: column; }
+    .sheet .items th { letter-spacing: 0.03em; padding: 8px 6px; }
+    .sheet .items td { padding: 9px 6px; }
+  }
+
+  @page { margin: 16mm; }
+  @media print {
+    .no-print, .ghost { display: none !important; }
+    body { background: #fff; }
+    .layout { display: block; }
+    .stage { display: block !important; padding: 0; }
+    .sheet { max-width: none; min-height: 0; margin: 0; padding: 0; box-shadow: none; border-radius: 0; font-size: 10.5pt; }
+    .sheet .top { flex-direction: row; }
+    .sheet .meta, .sheet .meta th, .sheet .meta td { text-align: right; }
+    .sheet .meta table { margin-left: auto; }
+    .sheet .crypto { flex-direction: row; }
+  }
+</style>
+</head>
+<body data-view="edit">
+
+<header class="bar no-print">
+  <div class="brand">invoice<span>pad</span></div>
+  <div class="actions">
+    <button class="btn" type="button" id="new">New invoice</button>
+    <button class="btn" type="button" id="open">Open file</button>
+    <button class="btn" type="button" id="save">Save file</button>
+    <button class="btn primary" type="button" id="print">Print / Save as PDF</button>
+  </div>
+  <p id="save-status" role="status"></p>
+  <input type="file" id="open-file" accept="application/json,.json" hidden>
+</header>
+
+<div class="tabs no-print" role="group" aria-label="View">
+  <button type="button" data-view="edit" aria-pressed="true">Edit</button>
+  <button type="button" data-view="preview" aria-pressed="false">Preview</button>
+</div>
+
+<div class="layout">
+  <form class="editor no-print" id="editor" autocomplete="off" novalidate>
+    <fieldset>
+      <legend>Invoice</legend>
+      <div class="row">
+        <label>Number <input name="number" placeholder="INV-0001"></label>
+        <label>Currency <select name="currency" id="currency"></select></label>
+      </div>
+      <div class="row">
+        <label>Issued <input name="issued" type="date"></label>
+        <label>Due <input name="due" type="date"></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>From</legend>
+      <label>Your name or business <input name="from.name" placeholder="Acme Studio"></label>
+      <label>Details <textarea name="from.details" placeholder="Address, email, tax ID. One per line."></textarea></label>
+      <div class="logo-row">
+        <button class="btn small" type="button" id="logo-pick">Add logo</button>
+        <button class="btn small" type="button" id="logo-clear" hidden>Remove logo</button>
+        <label class="check" style="margin-left:auto">Colour <input name="accent" type="color" style="width:44px"></label>
+        <input type="file" id="logo-file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
+      </div>
+      <p class="status error" id="logo-status" role="status" hidden></p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Bill to</legend>
+      <label>Client <input name="to.name" placeholder="Client name"></label>
+      <label>Details <textarea name="to.details" placeholder="Address, contact, tax ID. One per line."></textarea></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Items</legend>
+      <div class="item item-head" aria-hidden="true"><span>Description</span><span>Qty</span><span>Price</span><span></span></div>
+      <div id="items" style="display:grid;gap:6px"></div>
+      <div><button class="btn small" type="button" id="add-item">Add item</button></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Discount, tax, payments</legend>
+      <div class="row">
+        <label>Discount <input name="discount" inputmode="decimal" placeholder="0" data-number="discount"></label>
+        <label>Discount is
+          <select name="discountType">
+            <option value="percent">a percentage</option>
+            <option value="amount">a fixed amount</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <label>Tax name <input name="taxLabel" placeholder="VAT"></label>
+        <label>Tax rate % <input name="taxRate" inputmode="decimal" placeholder="0" data-number="rate"></label>
+      </div>
+      <label>Already paid <input name="paid" inputmode="decimal" placeholder="0" data-number="money"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>How to pay</legend>
+      <label>Bank transfer details <textarea name="bank" placeholder="Bank name, account name, account number, sort code or SWIFT. One per line."></textarea></label>
+      <label class="check"><input type="checkbox" name="crypto.enabled"> Accept USDC or USDT</label>
+      <div id="crypto-fields" style="display:grid;gap:10px" hidden>
+        <div class="row">
+          <label>Token
+            <select name="crypto.token">
+              <option>USDC</option>
+              <option>USDT</option>
+            </select>
+          </label>
+          <label>Network <select name="crypto.network" id="network"></select></label>
+        </div>
+        <label id="network-name" hidden>Network name <input name="crypto.networkName" placeholder="For example: Sui"></label>
+        <label>Your wallet address <input name="crypto.address" id="address" spellcheck="false" autocapitalize="off" aria-describedby="address-status"></label>
+        <p class="status" id="address-status" role="status"></p>
+        <p class="hint">The address is checked for typos, printed in full and added as a QR code, with a warning to use only this token and network.</p>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Notes</legend>
+      <label>Shown at the bottom <textarea name="notes" placeholder="Payment terms, thanks, anything else."></textarea></label>
+    </fieldset>
+
+    <p class="about">
+      Free, no sign-up, no watermark. Your invoice stays in this browser and is never uploaded.
+      <a href="https://github.com/khalydmaina/invoicepad">Source</a>
+    </p>
+  </form>
+
+  <div class="stage">
+    <ul id="problems" class="no-print" aria-live="polite"></ul>
+    <article class="sheet" id="sheet" aria-label="Invoice preview"></article>
+  </div>
+</div>
+
+<script src="vendor/qrcode.js"></script>
+<script src="money.js"></script>
+<script src="address.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
